@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>YouTube 指定時刻ジャンプ（繰り返し対応）</title>
+  <meta name="theme-color" content="#111827" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <style>
+    :root{--bg:#0f172a;--card:#111827;--muted:#9ca3af;--text:#f9fafb;--accent:#22d3ee}
+    html,body{height:100%}
+    body{margin:0;background:linear-gradient(180deg,#0b1220,#0f172a 40%);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji"}
+    .wrap{max-width:760px;margin:0 auto;padding:24px 16px 80px}
+    .card{background:rgba(17,24,39,.7);backdrop-filter: blur(10px);border:1px solid rgba(255,255,255,.06);border-radius:20px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+    h1{font-size:22px;margin:0 0 12px}
+    p.lead{color:var(--muted);margin-top:4px}
+    label{display:block;font-size:14px;margin:12px 0 6px;color:#e5e7eb}
+    input,button,select{font:inherit}
+    input[type="url"], input[type="datetime-local"], input[type="time"], input[type="date"], input[type="number"]{
+      width:100%;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.12);
+      background:#0b1020;color:var(--text);outline:none
+    }
+    .row{display:grid;grid-template-columns:1fr;gap:12px}
+    @media (min-width:640px){.row{grid-template-columns:1fr 1fr}}
+    .btn{display:inline-flex;gap:8px;align-items:center;border:none;border-radius:12px;padding:12px 16px;font-weight:600;cursor:pointer}
+    .primary{background:var(--accent);color:#06202a}
+    .ghost{background:transparent;color:var(--text);border:1px solid rgba(255,255,255,.14)}
+    .danger{background:#ef4444;color:white}
+    .muted{color:var(--muted);font-size:13px}
+    .badge{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.16);color:#93c5fd}
+    .lock{display:flex;align-items:center;gap:8px;margin-top:8px}
+    .grid{display:grid;gap:12px}
+    .yt{aspect-ratio:16/9;background:#0b1020;border:1px dashed rgba(255,255,255,.12);border-radius:12px;display:flex;align-items:center;justify-content:center;color:#94a3b8}
+    .footer{margin-top:18px;font-size:12px;color:#a1a1aa}
+    .hidden{display:none}
+    .list{margin-top:14px;display:grid;gap:10px}
+    .item{border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;display:grid;gap:8px;background:rgba(255,255,255,.02)}
+    .item .top{display:flex;justify-content:space-between;gap:12px;align-items:center}
+    .chip{font-size:12px;padding:2px 8px;border:1px solid rgba(255,255,255,.16);border-radius:999px}
+    .weekday{display:flex;gap:6px;flex-wrap:wrap}
+    .weekday label{display:inline-flex;gap:6px;align-items:center;border:1px solid rgba(255,255,255,.14);padding:6px 10px;border-radius:999px;cursor:pointer;font-size:12px}
+    .dates{display:flex;gap:8px;flex-wrap:wrap}
+    .dates input[type="date"]{width:auto}
+    .actions{display:flex;gap:8px;flex-wrap:wrap}
+    /* シンプル的な iframe 領域スタイル */
+    #ytBox iframe { width: 100%; height: 100%; border: none; border-radius: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>📺 YouTube 指定時刻で通知＆自動遷移（繰り返し対応）</h1>
+      <p class="lead">動画URLと時刻・繰り返しルールを設定。時間になると通知し、指定動画へジャンプします。</p>
+
+      <div class="grid" role="form" aria-label="YouTubeリマインダー設定">
+        <div>
+          <label for="videoUrl">対象のYouTube動画URL</label>
+          <input id="videoUrl" type="url" placeholder="https://www.youtube.com/watch?v=XXXXXXXX" inputmode="url" />
+          <div class="muted">ショートURL（youtu.be）や /shorts/ もOK。Androidの共有から自動入力できます。</div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="startSec">開始位置（秒・任意）</label>
+            <input id="startSec" type="number" min="0" placeholder="例）120" />
+          </div>
+          <!--<div class="lock" style="margin-top:28px">
+            <input id="lockMode" type="checkbox" />
+            <label for="lockMode">閲覧必須モード（完了までアプリ内リンクをロック）</label>
+          </div>-->
+        </div>
+
+        <hr style="opacity:.2;border:none;border-top:1px solid rgba(255,255,255,.15)" />
+
+        <!-- 繰り返し設定 -->
+        <div>
+          <label for="repeatKind">繰り返し</label>
+          <select id="repeatKind">
+            <option value="once">1回だけ（日時指定）</option>
+            <option value="daily">毎日（時刻指定）</option>
+            <option value="weekly">曜日指定（時刻＋曜日）</option>
+            <option value="dates">日付指定（複数日＋時刻）</option>
+          </select>
+        </div>
+
+        <div id="onceBox">
+          <label for="onceDateTime">日時（端末の現地時刻）</label>
+          <input id="onceDateTime" type="datetime-local" />
+        </div>
+
+        <div id="dailyBox" class="hidden">
+          <label for="dailyTime">時刻（毎日）</label>
+          <input id="dailyTime" type="time" />
+        </div>
+
+        <div id="weeklyBox" class="hidden">
+          <label for="weeklyTime">時刻（曜日指定の毎週）</label>
+          <input id="weeklyTime" type="time" />
+          <div class="weekday" style="margin-top:8px">
+            <!-- 0:日,1:月,...6:土 -->
+            <label><input type="checkbox" class="wday" value="1">月</label>
+            <label><input type="checkbox" class="wday" value="2">火</label>
+            <label><input type="checkbox" class="wday" value="3">水</label>
+            <label><input type="checkbox" class="wday" value="4">木</label>
+            <label><input type="checkbox" class="wday" value="5">金</label>
+            <label><input type="checkbox" class="wday" value="6">土</label>
+            <label><input type="checkbox" class="wday" value="0">日</label>
+          </div>
+          <div class="muted">少なくとも1つ選んでください</div>
+        </div>
+
+        <div id="datesBox" class="hidden">
+          <label for="datesTime">時刻（各日付に適用）</label>
+          <input id="datesTime" type="time" />
+          <div class="dates" style="margin-top:8px" id="datesContainer"></div>
+          <button class="btn ghost" id="addDate" type="button">＋ 日付を追加</button>
+        </div>
+
+        <div class="row actions">
+          <button id="addSchedule" class="btn primary" type="button">▶ 予約を追加</button>
+          <button id="stayAwake" class="btn ghost" type="button">💡 画面消灯防止</button>
+          <input id="importFile" type="file" accept="application/json" class="hidden" />
+        </div>
+
+        <div id="status" class="badge" aria-live="polite">準備中</div>
+
+        <div class="yt hidden" id="ytBox" aria-label="埋め込み動画領域">（閲覧必須モード：動画完了で解除）</div>
+
+        <h3 style="margin:14px 0 6px">📅 登録済みスケジュール</h3>
+        <div id="list" class="list" aria-live="polite"></div>
+
+        <div class="footer">
+          <div>※ ページを閉じる／スリープ中はタイマーが遅延することがあります。開いたままの運用が最も確実です。</div>
+          <div>※ iOSは通知にユーザー許可が必要。ホーム画面に追加すると安定する場合があります。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===== 共通ユーティリティ =====
+    function normalizeYouTubeUrl(raw, startSec) {
+      if (!raw) return null;
+      raw = raw.trim();
+      // 受け取るケース：完全URL、youtu.be 短縮、/shorts/、あるいは query に余計なものが付いてる場合など
+      try {
+        // もし raw にスペースや他テキストが混じっていたら後ろのURLを抽出（共有時にテキストの中にURLが混入することがある）
+        const urlMatch = raw.match(/https?:\/\/[^\s]+/);
+        if (urlMatch) raw = urlMatch[0];
+
+        let url = new URL(raw);
+        // youtu.be → watch?v=
+        if (url.hostname.includes("youtu.be")) {
+          const id = url.pathname.replace("/", "");
+          url = new URL("https://www.youtube.com/watch?v=" + id);
+        }
+        // shorts → watch?v=
+        if (url.pathname.startsWith("/shorts/")) {
+          const parts = url.pathname.split("/").filter(Boolean);
+          const id = parts[1] || parts[0] || "";
+          url = new URL("https://www.youtube.com/watch?v=" + id);
+        }
+        // start 秒を一貫して start= に寄せる（t があれば取り込む）
+        const incomingT = url.searchParams.get("t");
+        const incomingStart = url.searchParams.get("start");
+        let start = Number(startSec || incomingStart || incomingT || 0);
+        start = Number.isFinite(start) && start > 0 ? Math.floor(start) : 0;
+        if (start > 0) {
+          url.searchParams.delete("t");
+          url.searchParams.set("start", String(start));
+        }
+        // 余計なパラメータは残しても問題ないが、不要なら下記で絞る（ここでは v と start のみを残す）
+        const id = url.searchParams.get("v");
+        const newUrl = new URL("https://www.youtube.com/watch?v=" + id);
+        if (start > 0) newUrl.searchParams.set("start", String(start));
+        return newUrl.toString();
+      } catch {
+        return null;
+      }
+    }
+
+    async function requestNotificationPermission() {
+      if (!("Notification" in window)) { alert("このブラウザは通知に未対応です。"); return "unsupported"; }
+      if (Notification.permission === "granted") return "granted";
+      if (Notification.permission === "denied") return "denied";
+      try { return await Notification.requestPermission(); } catch { return "denied"; }
+    }
+
+    function notify(title, body) {
+      try { if (Notification.permission === "granted") new Notification(title, { body }); } catch(e){ console.warn(e); }
+    }
+
+    // ===== Wake Lock =====
+    let wakeLock = null;
+    async function toggleWakeLock() {
+      try {
+        if (!("wakeLock" in navigator)) { alert("Wake Lockに未対応のブラウザです。"); return; }
+        if (!wakeLock) {
+          wakeLock = await navigator.wakeLock.request("screen");
+          document.getElementById("stayAwake").textContent = "💤 画面消灯防止 解除";
+          wakeLock.addEventListener("release", () => {
+            document.getElementById("stayAwake").textContent = "💡 画面消灯防止";
+            wakeLock = null;
+          });
+        } else {
+          await wakeLock.release(); wakeLock = null;
+        }
+      } catch (e) { console.warn(e); alert("画面消灯防止の取得に失敗しました。"); }
+    }
+
+    // ===== スケジュール構造 =====
+    const statusEl = document.getElementById("status");
+    const listEl = document.getElementById("list");
+    const ytBox = document.getElementById("ytBox");
+    const stayAwakeBtn = document.getElementById("stayAwake");
+
+    let schedules = []; // 全スケジュール
+    let locked = false;
+    let mustWatch = false;
+    let targetUrlPlaying = null;
+
+    // ===== 保存／復元 =====
+    function saveAll(){ localStorage.setItem("ytSchedulesV2", JSON.stringify(schedules)); }
+    function loadAll(){
+      try { schedules = JSON.parse(localStorage.getItem("ytSchedulesV2")||"[]"); }
+      catch { schedules = []; }
+      if (!Array.isArray(schedules)) schedules = [];
+    }
+
+    // ===== 次回実行時刻の計算 =====
+    function toTodayEpoch(timeHHMM, baseDate = new Date()){
+      const [hh, mm] = timeHHMM.split(":").map(Number);
+      const d = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), hh, mm, 0, 0);
+      return d.getTime();
+    }
+
+    function calcNextEpoch(s) {
+      const now = Date.now();
+      const nowD = new Date();
+
+      if (s.kind === "once") {
+        return (s.dt && s.dt > now) ? s.dt : null;
+      }
+
+      if (s.kind === "daily") {
+        let t = toTodayEpoch(s.time, nowD);
+        if (t <= now) {
+          const d = new Date(t); d.setDate(d.getDate()+1); t = d.getTime();
+        }
+        return t;
+      }
+
+      if (s.kind === "weekly") {
+        const set = new Set(s.weekdays||[]);
+        if (set.size === 0) return null;
+        for (let i=0;i<14;i++){
+          const d = new Date(now);
+          d.setDate(d.getDate()+i);
+          const day = d.getDay();
+          if (!set.has(day)) continue;
+          let t = toTodayEpoch(s.time, d);
+          if (i===0 && t<=now) continue;
+          return t;
+        }
+        return null;
+      }
+
+      if (s.kind === "dates") {
+        const consumed = s.state?.consumedDates || {};
+        const dates = (s.dates||[]).filter(d => !consumed[d]).sort();
+        for (const iso of dates) {
+          const [y,m,d] = iso.split("-").map(Number);
+          const t = new Date(y, m-1, d, ...s.time.split(":").map(Number), 0, 0).getTime();
+          if (t > now) return t;
+        }
+        return null; // もう残ってない
+      }
+      return null;
+    }
+
+    // ===== 予約追加 =====
+    function addSchedule(obj){
+      obj.id = crypto.randomUUID?.() || String(Date.now() + Math.random());
+      obj.nextEpoch = calcNextEpoch(obj);
+      if (obj.kind === "dates" && !obj.state) obj.state = { consumedDates: {} };
+      schedules.push(obj);
+      saveAll();
+      renderList();
+      tickStatus();
+    }
+
+    // ===== 実行（通知→遷移／埋め込み） =====
+    function fireSchedule(s){
+      notify("時間になりました ⏰", "指定のYouTubeへ移動します。");
+
+      if (s.kind === "dates") {
+        const fired = new Date();
+        const pad = n => String(n).padStart(2,"0");
+        const firedISO = `${fired.getFullYear()}-${pad(fired.getMonth()+1)}-${pad(fired.getDate())}`;
+        s.state = s.state || { consumedDates: {} };
+        s.state.consumedDates[firedISO] = true;
+      }
+
+      s.nextEpoch = calcNextEpoch(s);
+      saveAll();
+
+      if (s.lockMode) {
+        mustWatch = true;
+        applyLockUI(true);
+        targetUrlPlaying = s.videoUrl;
+        loadYouTubePlayer(s.videoUrl);
+        document.getElementById("ytBox").scrollIntoView({ behavior: "smooth", block: "center" });
+      } else {
+        window.location.href = s.videoUrl;
+      }
+    }
+
+    // ===== リスト表示 =====
+    function fmtKind(s){
+      if (s.kind==="once") return "1回";
+      if (s.kind==="daily") return "毎日";
+      if (s.kind==="weekly") return "曜日指定";
+      if (s.kind==="dates") return "日付指定";
+      return s.kind;
+    }
+    function fmtNext(epoch){
+      if (!epoch) return "—";
+      const d = new Date(epoch);
+      const wd = "日月火水木金土"[d.getDay()];
+      const pad = n => String(n).padStart(2,"0");
+      return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())}(${wd}) ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function renderList(){
+      listEl.innerHTML = "";
+      if (schedules.length===0){
+        const p = document.createElement("div");
+        p.className = "muted";
+        p.textContent = "（登録なし）";
+        listEl.appendChild(p);
+        return;
+      }
+      for (const s of schedules){
+        const div = document.createElement("div");
+        div.className = "item";
+        const top = document.createElement("div");
+        top.className = "top";
+        const left = document.createElement("div");
+        left.innerHTML = `<div><span class="chip">${fmtKind(s)}</span> <span class="muted">次回: ${fmtNext(s.nextEpoch)}</span></div>
+          <div style="word-break:break-all;margin-top:4px" class="muted">${s.videoUrl}</div>`;
+        const right = document.createElement("div");
+        right.style.display = "flex";
+        right.style.gap = "8px";
+
+        const go = document.createElement("button");
+        go.className = "btn ghost";
+        go.textContent = "今すぐ開く";
+        go.onclick = ()=> {
+          if (s.lockMode) {
+            mustWatch = true; applyLockUI(true);
+            targetUrlPlaying = s.videoUrl; loadYouTubePlayer(s.videoUrl);
+            document.getElementById("ytBox").scrollIntoView({ behavior: "smooth", block: "center" });
+          } else {
+            window.location.href = s.videoUrl;
+          }
+        };
+        right.appendChild(go);
+
+        const del = document.createElement("button");
+        del.className = "btn danger";
+        del.textContent = "削除";
+        del.onclick = ()=>{ removeSchedule(s.id); };
+        right.appendChild(del);
+
+        top.append(left,right);
+        div.appendChild(top);
+
+        const detail = document.createElement("div");
+        if (s.kind==="daily") detail.textContent = `時刻: ${s.time}`;
+        if (s.kind==="weekly") detail.textContent = `時刻: ${s.time} / 曜日: ${s.weekdays.sort().map(n=>"日月火水木金土"[n]).join(", ")}`;
+        if (s.kind==="dates")  detail.textContent = `時刻: ${s.time} / 日付: ${(s.dates||[]).sort().join(", ")}`;
+        if (s.kind==="once")   detail.textContent = `日時: ${fmtNext(s.dt)}`;
+        div.appendChild(detail);
+
+        listEl.appendChild(div);
+      }
+    }
+
+    function removeSchedule(id){
+      schedules = schedules.filter(x=>x.id!==id);
+      saveAll(); renderList(); tickStatus();
+    }
+
+    // ===== ステータス＆タイマー =====
+    function nearestNext(){
+      const actives = schedules.map(s=>s.nextEpoch).filter(Boolean);
+      if (actives.length===0) return null;
+      return Math.min(...actives);
+    }
+
+    function tickStatus(){
+      const n = nearestNext();
+      if (!n){ statusEl.textContent = "準備中"; return; }
+      const remain = Math.max(0, n - Date.now());
+      const mins = Math.floor(remain / 60000);
+      const secs = Math.floor((remain % 60000) / 1000);
+      statusEl.textContent = `最短の発火まで：残り ${mins}分 ${secs}秒`;
+    }
+
+    let tickTimer = null;
+    let firingNow = false;
+
+    function startTick(){
+      if (tickTimer) clearInterval(tickTimer);
+      tickTimer = setInterval(()=>{
+        tickStatus();
+        const now = Date.now();
+        if (firingNow) return;
+        const ready = schedules
+          .filter(s => s.nextEpoch && now >= s.nextEpoch)
+          .sort((a,b)=>a.nextEpoch - b.nextEpoch)[0];
+
+        if (ready){
+          firingNow = true;
+          try { fireSchedule(ready); }
+          finally { firingNow = false; }
+        }
+      }, 1000);
+    }
+
+    // ===== 閲覧必須モード（UIロック & YouTube IFrame API） =====
+    function applyLockUI(on){
+      locked = on;
+      document.querySelectorAll("a").forEach(a=>{
+        if (on) {
+          a.dataset.href = a.getAttribute("href");
+          a.removeAttribute("href");
+          a.style.pointerEvents = "none"; a.style.opacity = ".4";
+          a.title = "動画の視聴完了で解除されます";
+        } else {
+          if (a.dataset && a.dataset.href) a.setAttribute("href", a.dataset.href);
+          a.style.pointerEvents = ""; a.style.opacity = ""; a.title = "";
+        }
+      });
+      ytBox.classList.toggle("hidden", !on);
+    }
+
+    let ytPlayer = null;
+    let ytApiLoading = false;
+    function loadYouTubePlayer(url){
+      if (!url) return;
+      const u = new URL(url);
+      const id = u.searchParams.get("v");
+      const start = Number(u.searchParams.get("start") || u.searchParams.get("t") || 0);
+      if (!id) return;
+
+      // ytBox をプレイヤー用 div として使う（既存の IFrame API 呼び出しを利用）
+      ytBox.innerHTML = "";
+      const frameDiv = document.createElement("div");
+      frameDiv.id = "ytPlayerContainer";
+      frameDiv.style.width = "100%";
+      frameDiv.style.height = "360px";
+      ytBox.appendChild(frameDiv);
+
+      const create = () => {
+        ytPlayer = new YT.Player("ytPlayerContainer", {
+          videoId: id,
+          playerVars: { start, playsinline: 1, rel: 0 },
+          events: {
+            onReady: ev => { ev.target.playVideo?.(); },
+            onStateChange: ev => {
+              if (ev.data === YT.PlayerState.ENDED) {
+                mustWatch = false;
+                applyLockUI(false);
+                localStorage.setItem("ytWatched:"+id, "done");
+                alert("視聴完了！ロック解除しました。");
+                ytBox.innerHTML = ""; // プレイヤー掃除
+              }
+            }
+          }
+        });
+      };
+
+      if (window.YT && YT.Player) { create(); return; }
+      if (!document.getElementById("ytapi") && !ytApiLoading) {
+        ytApiLoading = true;
+        const s = document.createElement("script");
+        s.id = "ytapi";
+        s.src = "https://www.youtube.com/iframe_api";
+        document.body.appendChild(s);
+      }
+      const prev = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        prev?.();
+        create();
+      };
+    }
+
+    // ===== イベント配線 =====
+const notifBtn = document.getElementById("enableNotif");
+if (notifBtn) {
+  notifBtn.addEventListener("click", async ()=>{
+    const res = await requestNotificationPermission();
+    if (res === "granted") alert("通知が許可されました。");
+    else if (res === "denied") alert("通知が拒否されました（ブラウザ設定で変更可）。");
+  });
+}
+
+
+    stayAwakeBtn.addEventListener("click", toggleWakeLock);
+
+    // 繰り返し UI 切替
+    const repeatKind = document.getElementById("repeatKind");
+    const onceBox = document.getElementById("onceBox");
+    const dailyBox = document.getElementById("dailyBox");
+    const weeklyBox = document.getElementById("weeklyBox");
+    const datesBox = document.getElementById("datesBox");
+    repeatKind.addEventListener("change", ()=>{
+      const v = repeatKind.value;
+      onceBox.classList.toggle("hidden", v!=="once");
+      dailyBox.classList.toggle("hidden", v!=="daily");
+      weeklyBox.classList.toggle("hidden", v!=="weekly");
+      datesBox.classList.toggle("hidden", v!=="dates");
+    });
+
+    // 日付追加（複数）
+    const datesContainer = document.getElementById("datesContainer");
+    document.getElementById("addDate").addEventListener("click", ()=>{
+      const input = document.createElement("input");
+      input.type = "date";
+      datesContainer.appendChild(input);
+    });
+
+    // 予約追加
+    document.getElementById("addSchedule").addEventListener("click", ()=>{
+      const raw = document.getElementById("videoUrl").value.trim();
+      const startSecRaw = Number(document.getElementById("startSec").value);
+      const startSec = Math.max(0, Number.isFinite(startSecRaw) ? startSecRaw : 0);
+      const lockModeEl = document.getElementById("lockMode");
+      const lockMode = lockModeEl ? lockModeEl.checked : false;
+
+
+      const fixedUrl = normalizeYouTubeUrl(raw, startSec);
+      if (!fixedUrl) { alert("YouTube URLを確認してください。"); return; }
+
+      const kind = repeatKind.value;
+
+      if (kind === "once"){
+        const dtStr = document.getElementById("onceDateTime").value;
+        if (!dtStr){ alert("日時を選択してください。"); return; }
+        const epoch = new Date(dtStr).getTime();
+        if (!(epoch > Date.now())){ alert("未来の日時を選択してください。"); return; }
+        addSchedule({
+          kind:"once", dt: epoch, time: null, weekdays:null, dates:null,
+          videoUrl: fixedUrl, startSec, lockMode, state: {}
+        });
+        alert("1回の予約を追加しました。");
+
+      } else if (kind === "daily"){
+        const t = document.getElementById("dailyTime").value;
+        if (!t){ alert("時刻を選択してください。"); return; }
+        addSchedule({
+          kind:"daily", time: t, dt:null, weekdays:null, dates:null,
+          videoUrl: fixedUrl, startSec, lockMode, state: {}
+        });
+        alert("毎日の予約を追加しました。");
+
+      } else if (kind === "weekly"){
+        const t = document.getElementById("weeklyTime").value;
+        if (!t){ alert("時刻を選択してください。"); return; }
+        const w = Array.from(document.querySelectorAll(".wday:checked")).map(x=>Number(x.value));
+        if (w.length===0){ alert("曜日を少なくとも1つ選んでください。"); return; }
+        addSchedule({
+          kind:"weekly", time: t, dt:null, weekdays:w, dates:null,
+          videoUrl: fixedUrl, startSec, lockMode, state: {}
+        });
+        alert("曜日指定の予約を追加しました。");
+
+      } else if (kind === "dates"){
+        const t = document.getElementById("datesTime").value;
+        if (!t){ alert("時刻を選択してください。"); return; }
+        const ds = Array.from(datesContainer.querySelectorAll('input[type="date"]'))
+          .map(i=>i.value).filter(Boolean);
+        if (ds.length===0){ alert("日付を1つ以上追加してください。"); return; }
+        const now = Date.now();
+        const [hh,mm] = t.split(":").map(Number);
+        const future = ds.filter(s=>{
+          const [y,m,d] = s.split("-").map(Number);
+          return new Date(y, m-1, d, hh, mm, 0, 0).getTime() > now;
+        });
+        if (future.length===0){ alert("未来の日付を指定してください。"); return; }
+        addSchedule({
+          kind:"dates", time: t, dt:null, weekdays:null, dates: future,
+          videoUrl: fixedUrl, startSec, lockMode, state: { consumedDates: {} }
+        });
+        alert("日付指定の予約を追加しました。");
+      }
+    });
+
+    // ===== 初期化 =====
+    loadAll();
+    for (const s of schedules){ s.nextEpoch = calcNextEpoch(s); }
+    saveAll();
+    renderList();
+    startTick();
+
+    document.addEventListener("visibilitychange", ()=>{
+      if (document.hidden) console.log("Background; timers may throttle.");
+    });
+
+    // ===== エクスポート／インポート =====
+    document.getElementById("exportJson").addEventListener("click", ()=>{
+      const blob = new Blob([JSON.stringify(schedules, null, 2)], {type:"application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "ytSchedulesV2.json"; a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById("importJson").addEventListener("click", ()=>{
+      document.getElementById("importFile").click();
+    });
+
+    document.getElementById("importFile").addEventListener("change", async (e)=>{
+      const f = e.target.files?.[0]; if (!f) return;
+      const text = await f.text();
+      try {
+        const arr = JSON.parse(text);
+        if (!Array.isArray(arr)) throw new Error("invalid");
+        schedules = arr.map(s => ({...s, nextEpoch: calcNextEpoch(s)}));
+        saveAll(); renderList(); tickStatus();
+        alert("読み込み完了");
+      } catch { alert("JSONが不正です"); }
+    });
+
+    // ===== Service Worker登録 =====
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js", { scope: "./" })
+      .then(() => console.log("SW registered"))
+      .catch(console.warn);
+    }
+
+
+
+    // ===== 共有経由で起動されたときの処理（URL パラメータ ?shared=... を読む） =====
+    function getQueryParam(name){
+      const params = new URLSearchParams(window.location.search);
+      return params.get(name);
+    }
+
+    function handleSharedParameter(){
+      const shared = getQueryParam("shared");
+      if (!shared) return;
+      // 共有時は共有されたテキストがエンコードされている（サービスワーカーで redirect したのでここに来る）
+      try {
+        const decoded = decodeURIComponent(shared);
+        // 受け取る値は "https://..." のはずだが、YouTube共有ではテキストに説明が混じることもあるので normalizeYouTubeUrl で抽出
+        const n = normalizeYouTubeUrl(decoded);
+        if (n) {
+          document.getElementById("videoUrl").value = n;
+          // さらにユーザーにわかるようにステータスメッセージ
+          statusEl.textContent = "共有からURLを受け取りました。";
+          // フォーカスして視認性を上げる
+          document.getElementById("videoUrl").focus();
+        } else {
+          // もし URL として拾えなければ raw を入れておく
+          document.getElementById("videoUrl").value = decoded;
+          statusEl.textContent = "共有テキストを受け取りました（URL解析に失敗）。";
+        }
+        // 共有パラメータがある場合はブラウザの履歴を置き換えてクリーンにする
+        const url = new URL(window.location.href);
+        url.searchParams.delete("shared");
+        history.replaceState(null, "", url.pathname + url.search);
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
+    // 起動時に共有パラメータを処理
+    handleSharedParameter();
+
+    // 起動時にサービスワーカーや他タブからのメッセージで共有を受け取る場合（保険）
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.addEventListener("message", ev=>{
+        if (!ev.data) return;
+        if (ev.data.type === "shared-url") {
+          const n = normalizeYouTubeUrl(ev.data.url || "");
+          if (n) document.getElementById("videoUrl").value = n;
+        }
+      });
+    }
+
+    // 初期化終わり
+  </script>
+</body>
+</html>
