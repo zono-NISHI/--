@@ -1,6 +1,6 @@
 {
-  "name": "YouTube 必須視聴 & 通知ランチャー",
-  "short_name": "YT Lock",
+  "name": "YouTubeリマインドアプリ",
+  "short_name": "Mold",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
